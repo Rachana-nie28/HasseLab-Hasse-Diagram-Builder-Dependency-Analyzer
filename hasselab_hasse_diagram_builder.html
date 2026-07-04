@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hasse Diagram Builder & Dependency Analyzer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --ink:#1a1a2e;--ink2:#4a4a6a;--ink3:#8888aa;
+    --paper:#f8f7f2;--surface:#ffffff;--surface2:#f0eee8;
+    --accent:#6c3bff;--accent2:#ff6b6b;--accent3:#00c9a7;--accent4:#ffb347;
+    --border:rgba(26,26,46,0.12);--border2:rgba(26,26,46,0.06);
+    --shadow:0 2px 8px rgba(26,26,46,0.08);
+    --radius:10px;--mono:'JetBrains Mono',monospace;--serif:'Fraunces',serif;
+  }
+  body{font-family:var(--mono);background:var(--paper);color:var(--ink);min-height:100vh;font-size:13px}
+  h1{font-family:var(--serif);font-weight:600;font-size:22px;letter-spacing:-0.5px}
+  h2{font-family:var(--serif);font-weight:300;font-size:16px;color:var(--ink2)}
+  h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink3);margin-bottom:8px}
+
+  /* Layout */
+  .app{display:grid;grid-template-columns:320px 1fr;grid-template-rows:56px 1fr;min-height:100vh}
+  .topbar{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .topbar h1{flex:0 0 auto}
+  .tab-row{display:flex;gap:4px;flex:1}
+  .tab{padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:var(--ink2);border:none;background:none;font-family:var(--mono);transition:all .15s}
+  .tab:hover{background:var(--surface2);color:var(--ink)}
+  .tab.active{background:var(--accent);color:#fff}
+  .sidebar{padding:16px;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface);display:flex;flex-direction:column;gap:16px}
+  .main{position:relative;overflow:hidden}
+
+  /* Cards */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+
+  /* Inputs */
+  input[type=text],textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;background:var(--paper);color:var(--ink);outline:none;transition:border-color .15s}
+  input[type=text]:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:70px}
+  label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px}
+
+  /* Buttons */
+  .btn{padding:7px 14px;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--ink);transition:all .15s}
+  .btn:hover{border-color:var(--ink3);background:var(--surface)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+  .btn.primary:hover{opacity:.9}
+  .btn.danger{background:var(--accent2);color:#fff;border-color:transparent}
+  .btn.sm{padding:4px 10px;font-size:11px}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap}
+
+  /* SVG canvas */
+  #canvas-wrap{width:100%;height:100%;position:relative;overflow:hidden;cursor:grab;background:var(--paper)}
+  #canvas-wrap:active{cursor:grabbing}
+  #diagram-svg{width:100%;height:100%}
+
+  /* Node styles */
+  .hasse-node{cursor:grab;transition:filter .15s}
+  .hasse-node:hover .node-circle{filter:brightness(1.1)}
+  .hasse-node.dragging{cursor:grabbing}
+  .node-circle{transition:all .2s}
+  .node-label{font-family:var(--mono);font-weight:700;font-size:13px;pointer-events:none;dominant-baseline:central;text-anchor:middle}
+  .node-sublabel{font-family:var(--mono);font-size:10px;pointer-events:none;dominant-baseline:central;text-anchor:middle;opacity:.7}
+
+  /* Edge styles */
+  .hasse-edge{stroke-width:2;fill:none;opacity:.7;transition:opacity .3s}
+  .edge-removed{stroke-dasharray:5 5;opacity:.3;stroke:var(--accent2)}
+
+  /* Properties panel */
+  .prop-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;margin:2px}
+  .badge-yes{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
+  .badge-no{background:#fce4ec;color:#c62828;border:1px solid #ef9a9a}
+  .badge-info{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
+  .badge-warn{background:#fff8e1;color:#e65100;border:1px solid #ffe082}
+  .badge-special{background:#f3e5f5;color:#6a1b9a;border:1px solid #ce93d8}
+
+  /* Matrix input */
+  .matrix-grid{display:grid;gap:2px}
+  .matrix-cell{width:28px;height:28px;border:1px solid var(--border);border-radius:4px;text-align:center;font-family:var(--mono);font-size:12px;padding:0;cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .matrix-cell.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .matrix-cell.off{background:var(--surface);color:var(--ink3)}
+  .matrix-cell.diag{background:var(--surface2);color:var(--ink3);cursor:default;font-size:10px}
+
+  /* Quiz */
+  .quiz-q{padding:12px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--accent);font-size:13px;line-height:1.5;margin-bottom:10px}
+  .quiz-option{padding:8px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;margin:4px 0;transition:all .15s;font-size:12px}
+  .quiz-option:hover{border-color:var(--accent);background:rgba(108,59,255,.05)}
+  .quiz-option.correct{background:#e8f5e9;border-color:#4caf50;color:#1b5e20}
+  .quiz-option.wrong{background:#fce4ec;border-color:#f44336;color:#b71c1c}
+  .quiz-score{font-size:20px;font-weight:700;color:var(--accent);font-family:var(--serif)}
+
+  /* Real-world apps */
+  .app-card{padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;transition:border-color .15s;cursor:pointer}
+  .app-card:hover{border-color:var(--accent)}
+  .app-card h4{font-size:12px;font-weight:700;color:var(--ink);margin-bottom:3px}
+  .app-card p{font-size:11px;color:var(--ink2);line-height:1.4}
+
+  /* Panels */
+  .panel{display:none;padding:20px;height:100%;overflow-y:auto}
+  .panel.active{display:block}
+
+  /* Tooltip */
+  #tooltip{position:fixed;background:var(--ink);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:999;max-width:200px;line-height:1.4}
+
+  /* Controls overlay */
+  .canvas-controls{position:absolute;bottom:16px;right:16px;display:flex;flex-direction:column;gap:6px}
+  .ctrl-btn{width:36px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);transition:all .15s}
+  .ctrl-btn:hover{background:var(--surface2)}
+
+  /* Legend */
+  .legend{position:absolute;top:12px;left:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:11px}
+  .leg-item{display:flex;align-items:center;gap:8px;margin:3px 0;color:var(--ink2)}
+  .leg-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+
+  /* Scrollbar */
+  ::-webkit-scrollbar{width:5px}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+  /* Animations */
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .anim-in{animation:fadeIn .3s ease both}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+  .pulse{animation:pulse .4s ease}
+
+  /* Presets strip */
+  .presets{display:flex;gap:6px;flex-wrap:wrap}
+  .preset-btn{padding:4px 8px;font-size:10px;border:1px dashed var(--border);border-radius:4px;cursor:pointer;color:var(--ink2);background:none;font-family:var(--mono);transition:all .15s}
+  .preset-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+  .info-box{padding:8px 10px;background:rgba(108,59,255,.06);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:11px;color:var(--ink2);line-height:1.5;margin-top:8px}
+
+  .step-indicator{display:flex;gap:4px;margin-bottom:12px}
+  .step-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:background .2s}
+  .step-dot.active{background:var(--accent)}
+
+  .empty-state{text-align:center;padding:40px 20px;color:var(--ink3)}
+  .empty-state .icon{font-size:40px;margin-bottom:12px;opacity:.4}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ===== TOP BAR ===== -->
+  <div class="topbar">
+    <h1>Hasse</h1>
+    <div class="tab-row">
+      <button class="tab active" onclick="switchTab('builder')">Builder</button>
+      <button class="tab" onclick="switchTab('matrix')">Matrix Input</button>
+      <button class="tab" onclick="switchTab('explain')">Learn</button>
+      <button class="tab" onclick="switchTab('quiz')">Quiz</button>
+      <button class="tab" onclick="switchTab('realworld')">Real-world</button>
+    </div>
+  </div>
+
+  <!-- ===== SIDEBAR: BUILDER ===== -->
+  <div class="sidebar" id="sidebar-builder">
+    <div class="card">
+      <h3>Set Elements</h3>
+      <label>Elements (comma-separated)</label>
+      <input type="text" id="elements-input" placeholder="e.g. 1,2,3,4,6,12" value="1,2,3,6">
+      <div style="margin-top:8px">
+        <h3 style="margin-bottom:6px">Presets</h3>
+        <div class="presets">
+          <button class="preset-btn" onclick="loadPreset('div12')">Divisors of 12</button>
+          <button class="preset-btn" onclick="loadPreset('power3')">Power set 3</button>
+          <button class="preset-btn" onclick="loadPreset('chain')">Chain 1-5</button>
+          <button class="preset-btn" onclick="loadPreset('antichain')">Antichain</button>
+          <button class="preset-btn" onclick="loadPreset('diamond')">Diamond</button>
+          <button class="preset-btn" onclick="loadPreset('deps')">Task deps</button>
+          <button class="preset-btn" onclick="loadPreset('subset2')">Subset ⊆</button>
+          <button class="preset-btn" onclick="loadPreset('div60')">Divisors of 60</button>
+          <button class="preset-btn" onclick="loadPreset('partition4')">Partition Lattice</button>
+          <button class="preset-btn" onclick="loadPreset('z2lattice')">Z×Z Poset</button>
+          <button class="preset-btn" onclick="loadPreset('subset3')">Subset 3</button>
+          <button class="preset-btn" onclick="loadPreset('div100')">Divisors of 100</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Relations (a ≤ b)</h3>
+      <label>Enter pairs "a b" one per line</label>
+      <textarea id="relations-input" placeholder="1 2&#10;1 3&#10;2 6&#10;3 6" rows="5"></textarea>
+      <div class="info-box">Or use <strong>Auto-detect</strong> for divisibility on numbers</div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn primary" onclick="buildDiagram()">Build Diagram</button>
+        <button class="btn" onclick="autoDivisibility()">Auto ÷</button>
+      </div>
+    </div>
+
+    <div class="card" id="properties-panel" style="display:none">
+      <h3>Poset Properties</h3>
+      <div id="props-content"></div>
+    </div>
+
+    <div class="card" id="elements-panel" style="display:none">
+      <h3>Special Elements</h3>
+      <div id="elements-content"></div>
+    </div>
+
+    <div class="card">
+      <h3>Display</h3>
+      <div class="btn-row">
+        <button class="btn sm" onclick="toggleTransitive()">Toggle Transitive</button>
+        <button class="btn sm" onclick="animateReduction()">Animate Reduction</button>
+        <button class="btn sm" onclick="resetLayout()">Auto Layout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SIDEBAR: MATRIX ===== -->
+  <div class="sidebar" id="sidebar-matrix" style="display:none">
+    <div class="card">
+      <h3>Matrix Input</h3>
+      <label>Elements (comma-separated)</label>
+      <input type="text" id="matrix-elements" placeholder="a,b,c,d,e,f,g,h,i,j" value="a,b,c,d,e,f,g,h,i,j">
+      <button class="btn" style="margin-top:8px;width:100%" onclick="buildMatrix()">Generate Matrix</button>
+    </div>
+    <div class="card">
+      <h3>Relation Matrix</h3>
+      <p style="font-size:11px;color:var(--ink3);margin-bottom:10px">Click cells to toggle. Diagonal = reflexive (always 1).</p>
+      <div id="matrix-container"></div>
+      <button class="btn primary" style="margin-top:12px;width:100%" onclick="buildFromMatrix()">Build from Matrix</button>
+    </div>
+  </div>
+
+  <!-- ===== SIDEBAR: LEARN ===== -->
+  <div class="sidebar" id="sidebar-explain" style="display:none">
+    <div class="card">
+      <h3>Core Concepts</h3>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <button class="btn" onclick="showConcept('poset')">What is a Poset?</button>
+        <button class="btn" onclick="showConcept('hasse')">Hasse Diagrams</button>
+        <button class="btn" onclick="showConcept('transitive')">Transitive Reduction</button>
+        <button class="btn" onclick="showConcept('elements')">Special Elements</button>
+        <button class="btn" onclick="showConcept('lattice')">Lattices</button>
+      </div>
+    </div>
+    <div class="card" id="concept-card">
+      <div id="concept-content" style="font-size:12px;line-height:1.7;color:var(--ink2)">
+        <p>Select a concept above to learn about it.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SIDEBAR: QUIZ ===== -->
+  <div class="sidebar" id="sidebar-quiz" style="display:none">
+    <div class="card">
+      <div class="step-indicator" id="quiz-steps"></div>
+      <div id="quiz-content">
+        <p style="color:var(--ink3);font-size:12px">Test your understanding of posets and Hasse diagrams.</p>
+        <button class="btn primary" style="margin-top:10px;width:100%" onclick="startQuiz()">Start Quiz</button>
+      </div>
+    </div>
+    <div class="card" id="quiz-score-card" style="display:none">
+      <h3>Score</h3>
+      <div id="quiz-score-display"></div>
+    </div>
+  </div>
+
+  <!-- ===== SIDEBAR: REAL-WORLD ===== -->
+  <div class="sidebar" id="sidebar-realworld" style="display:none">
+    <div class="card">
+      <h3>Applications</h3>
+      <p style="font-size:11px;color:var(--ink3);margin-bottom:10px">Click an application to load its Hasse diagram.</p>
+      <div id="realworld-list"></div>
+    </div>
+    <div class="card" id="rw-detail" style="display:none">
+      <h3 id="rw-title"></h3>
+      <p id="rw-desc" style="font-size:11px;color:var(--ink2);line-height:1.6;margin-bottom:10px"></p>
+      <div id="rw-props"></div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN AREA ===== -->
+  <div class="main" id="main-area">
+
+    <!-- Builder / Matrix Canvas -->
+    <div id="canvas-wrap">
+      <svg id="diagram-svg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#8888aa" opacity=".7"/>
+          </marker>
+          <marker id="arrowhead-trans" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ff6b6b" opacity=".5"/>
+          </marker>
+        </defs>
+        <g id="edges-layer"></g>
+        <g id="nodes-layer"></g>
+      </svg>
+
+      <!-- Legend -->
+      <div class="legend" id="legend" style="display:none">
+        <div class="leg-item"><div class="leg-dot" style="background:#6c3bff"></div> Regular node</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#00c9a7"></div> Maximal element</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#ffb347"></div> Minimal element</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#ff6b6b"></div> Greatest / Least</div>
+        <div class="leg-item" id="leg-trans" style="display:none">
+          <svg width="24" height="2" style="flex-shrink:0"><line x1="0" y1="1" x2="24" y2="1" stroke="#ff6b6b" stroke-width="2" stroke-dasharray="4 3"/></svg>
+          Transitive edge
+        </div>
+      </div>
+
+      <!-- Zoom controls -->
+      <div class="canvas-controls">
+        <button class="ctrl-btn" onclick="zoomIn()" title="Zoom in">+</button>
+        <button class="ctrl-btn" onclick="zoomOut()" title="Zoom out">−</button>
+        <button class="ctrl-btn" onclick="fitView()" title="Fit view">⊡</button>
+      </div>
+
+      <!-- Empty state -->
+      <div id="empty-canvas" class="empty-state" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
+        <div class="icon">⬡</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px">Build a Hasse Diagram</div>
+        <div style="font-size:12px">Enter elements and relations, or choose a preset</div>
+      </div>
+    </div>
+
+    <!-- Learn panel -->
+    <div id="panel-explain" class="panel">
+      <div id="explain-diagram" style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;height:360px;background:var(--paper)"></div>
+    </div>
+
+    <!-- Quiz diagram panel -->
+    <div id="panel-quiz" class="panel">
+      <div id="quiz-diagram" style="height:360px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--paper)"></div>
+    </div>
+
+    <!-- Real-world diagram panel -->
+    <div id="panel-realworld" class="panel">
+      <div id="rw-diagram" style="height:420px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--paper)"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ============================================================
+//  STATE
+// ============================================================
+let nodes = [], edges = [], allEdges = [];
+let showTransitive = false;
+let scale = 1, offsetX = 0, offsetY = 0;
+let dragging = null, dragStartX = 0, dragStartY = 0, nodeStartX = 0, nodeStartY = 0;
+let panning = false, panStartX = 0, panStartY = 0;
+let matrixValues = {};
+let currentTab = 'builder';
+let quizIdx = 0, quizScore = 0, quizStarted = false, quizAnswered = false;
+
+// Node color roles
+const COLORS = {
+  normal:   {fill:'#6c3bff', stroke:'#5028d4', text:'#fff'},
+  maximal:  {fill:'#00c9a7', stroke:'#00a886', text:'#fff'},
+  minimal:  {fill:'#ffb347', stroke:'#e8960a', text:'#fff'},
+  greatest: {fill:'#ff6b6b', stroke:'#cc4444', text:'#fff'},
+  least:    {fill:'#ff6b6b', stroke:'#cc4444', text:'#fff'},
+  both:     {fill:'#ff6b6b', stroke:'#cc4444', text:'#fff'},
+};
+
+// ============================================================
+//  GRAPH ALGORITHMS
+// ============================================================
+function buildAdjacency(elements, pairs) {
+  const rel = {};
+  elements.forEach(e => { rel[e] = new Set(); rel[e].add(e); }); // reflexive
+  pairs.forEach(([a, b]) => { if (a !== b && rel[a] !== undefined) rel[a].add(b); });
+  return rel;
+}
+
+function transitiveClose(elements, rel) {
+  const closed = {};
+  elements.forEach(e => closed[e] = new Set([...rel[e]]));
+  // Floyd-Warshall
+  elements.forEach(k => elements.forEach(i => elements.forEach(j => {
+    if (closed[i].has(k) && closed[k].has(j)) closed[i].add(j);
+  })));
+  return closed;
+}
+
+function isPartialOrder(elements, rel) {
+  // Reflexive
+  const refl = elements.every(e => rel[e].has(e));
+  // Antisymmetric
+  let anti = true;
+  elements.forEach(a => elements.forEach(b => {
+    if (a !== b && rel[a].has(b) && rel[b].has(a)) anti = false;
+  }));
+  // Transitive
+  let trans = true;
+  elements.forEach(a => elements.forEach(b => elements.forEach(c => {
+    if (rel[a].has(b) && rel[b].has(c) && !rel[a].has(c)) trans = false;
+  })));
+  return { refl, anti, trans };
+}
+
+function transitiveReduction(elements, rel) {
+  const pairs = [];
+  elements.forEach(a => rel[a].forEach(b => { if (a !== b) pairs.push([a, b]); }));
+  return pairs.map(([a, b]) => {
+    let implied = false;
+    elements.forEach(c => {
+      if (c !== a && c !== b && rel[a].has(c) && rel[c].has(b)) implied = true;
+    });
+    return { from: a, to: b, transitive: implied };
+  });
+}
+
+function findSpecialElements(elements, rel) {
+  const maximal = [], minimal = [], greatest = [], least = [];
+  elements.forEach(a => {
+    const above = elements.filter(b => b !== a && rel[a].has(b));
+    if (above.length === 0) maximal.push(a);
+    const below = elements.filter(b => b !== a && rel[b].has(a));
+    if (below.length === 0) minimal.push(a);
+  });
+  elements.forEach(a => {
+    if (elements.every(b => rel[b].has(a))) greatest.push(a);
+    if (elements.every(b => rel[a].has(b))) least.push(a);
+  });
+  return { maximal, minimal, greatest, least };
+}
+
+function isLattice(elements, rel) {
+  for (let i = 0; i < elements.length; i++) {
+    for (let j = i + 1; j < elements.length; j++) {
+      const a = elements[i], b = elements[j];
+      const ubs = elements.filter(x => rel[a].has(x) && rel[b].has(x));
+      if (!ubs.some(x => ubs.every(y => rel[x].has(y)))) return false;
+      const lbs = elements.filter(x => rel[x].has(a) && rel[x].has(b));
+      if (!lbs.some(x => lbs.every(y => rel[y].has(x)))) return false;
+    }
+  }
+  return true;
+}
+
+// ============================================================
+//  LAYOUT (level-based)
+// ============================================================
+function computeLayout(elements, rel, edgeList) {
+  const levels = {};
+  elements.forEach(e => levels[e] = 0);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    edgeList.filter(e => !e.transitive).forEach(({ from, to }) => {
+      if (levels[to] <= levels[from]) { levels[to] = levels[from] + 1; changed = true; }
+    });
+  }
+  const maxLevel = Math.max(...Object.values(levels), 0);
+  const byLevel = {};
+  elements.forEach(e => {
+    if (!byLevel[levels[e]]) byLevel[levels[e]] = [];
+    byLevel[levels[e]].push(e);
+  });
+  const W = 800, H = Math.max(400, (maxLevel + 1) * 120 + 80);
+  const positions = {};
+  Object.keys(byLevel).map(Number).sort((a, b) => a - b).forEach(lv => {
+    const group = byLevel[lv];
+    const y = H - 60 - (lv / (maxLevel || 1)) * (H - 120);
+    group.forEach((e, i) => {
+      positions[e] = { x: (W / (group.length + 1)) * (i + 1), y };
+    });
+  });
+  return { positions, W, H };
+}
+
+// ============================================================
+//  BUILD & RENDER DIAGRAM
+// ============================================================
+function buildDiagram() {
+  const elemStr = document.getElementById('elements-input').value;
+  const relStr  = document.getElementById('relations-input').value;
+  const elements = elemStr.split(',').map(s => s.trim()).filter(Boolean);
+  if (elements.length === 0) { alert('Please enter at least one element.'); return; }
+
+  const pairs = relStr.split('\n').map(l => {
+    const p = l.trim().split(/\s+/);
+    return p.length >= 2 ? [p[0], p[1]] : null;
+  }).filter(Boolean);
+
+  const rel    = buildAdjacency(elements, pairs);
+  const closed = transitiveClose(elements, rel);
+  const edgeList = transitiveReduction(elements, closed);
+
+  nodes = elements.map(e => ({ id: e, label: e }));
+  const { positions, W, H } = computeLayout(elements, closed, edgeList);
+  nodes.forEach(n => { const p = positions[n.id]; n.x = p.x; n.y = p.y; });
+
+  const special = findSpecialElements(elements, closed);
+  const props   = isPartialOrder(elements, closed);
+  const lattice = isLattice(elements, closed);
+
+  nodes.forEach(n => {
+    const isMax = special.maximal.includes(n.id);
+    const isMin = special.minimal.includes(n.id);
+    const isGrt = special.greatest.includes(n.id);
+    const isLst = special.least.includes(n.id);
+    if (isGrt || isLst) n.role = 'greatest';
+    else if (isMax && isMin) n.role = 'both';
+    else if (isMax) n.role = 'maximal';
+    else if (isMin) n.role = 'minimal';
+    else n.role = 'normal';
+  });
+
+  allEdges = edgeList;
+  edges = edgeList;
+  renderDiagram(W, H);
+  showProperties(props, special, lattice, elements.length);
+  document.getElementById('empty-canvas').style.display = 'none';
+  document.getElementById('legend').style.display = 'block';
+  fitView();
+}
+
+function renderDiagram(W, H) {
+  const svg = document.getElementById('diagram-svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const edgeLayer = document.getElementById('edges-layer');
+  const nodeLayer = document.getElementById('nodes-layer');
+  edgeLayer.innerHTML = '';
+  nodeLayer.innerHTML = '';
+  const R = 22;
+
+  // Draw edges
+  edges.forEach((edge, idx) => {
+    const src = nodes.find(n => n.id === edge.from);
+    const tgt = nodes.find(n => n.id === edge.to);
+    if (!src || !tgt) return;
+    const dx = tgt.x - src.x, dy = tgt.y - src.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return;
+    const ux = dx / len, uy = dy / len;
+    const x1 = src.x + ux * R, y1 = src.y + uy * R;
+    const x2 = tgt.x - ux * (R + 6), y2 = tgt.y - uy * (R + 6);
+
+    if (edge.transitive && !showTransitive) return; // skip hidden transitive
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+
+    if (edge.transitive) {
+      line.setAttribute('class', 'hasse-edge edge-removed');
+      line.setAttribute('marker-end', 'url(#arrowhead-trans)');
+    } else {
+      line.setAttribute('class', 'hasse-edge');
+      line.setAttribute('stroke', '#8888aa');
+      line.setAttribute('marker-end', 'url(#arrowhead)');
+    }
+    line.dataset.idx = idx;
+    edgeLayer.appendChild(line);
+  });
+
+  // Draw nodes
+  nodes.forEach(node => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'hasse-node');
+    g.dataset.id = node.id;
+
+    const c = COLORS[node.role] || COLORS.normal;
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', node.x); circle.setAttribute('cy', node.y);
+    circle.setAttribute('r', R);
+    circle.setAttribute('fill', c.fill);
+    circle.setAttribute('stroke', c.stroke);
+    circle.setAttribute('stroke-width', '2');
+    circle.setAttribute('class', 'node-circle');
+    g.appendChild(circle);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', node.x); text.setAttribute('y', node.y);
+    text.setAttribute('fill', c.text);
+    text.setAttribute('class', 'node-label');
+    text.textContent = node.label;
+    g.appendChild(text);
+
+    // Sub-label (role badge below circle)
+    const roleMap = { maximal:'max', minimal:'min', greatest:'⊤', least:'⊥', both:'⊤/⊥' };
+    if (node.role !== 'normal') {
+      const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub.setAttribute('x', node.x); sub.setAttribute('y', node.y + R + 12);
+      sub.setAttribute('fill', c.fill);
+      sub.setAttribute('class', 'node-sublabel');
+      sub.textContent = roleMap[node.role] || '';
+      g.appendChild(sub);
+    }
+
+    // Tooltip
+    g.addEventListener('mouseenter', () => {
+      const t = document.getElementById('tooltip');
+      const roleLabels = { maximal:'Maximal element', minimal:'Minimal element', greatest:'Greatest element (⊤)', least:'Least element (⊥)', both:'Greatest & Least', normal:'Regular element' };
+      t.innerHTML = `<strong>${node.label}</strong><br>${roleLabels[node.role] || ''}`;
+      t.style.opacity = '1';
+    });
+    g.addEventListener('mousemove', e => {
+      const t = document.getElementById('tooltip');
+      t.style.left = (e.clientX + 12) + 'px';
+      t.style.top  = (e.clientY - 8) + 'px';
+    });
+    g.addEventListener('mouseleave', () => { document.getElementById('tooltip').style.opacity = '0'; });
+
+    // Drag
+    g.addEventListener('mousedown', e => startDrag(e, node));
+    nodeLayer.appendChild(g);
+  });
+}
+
+function showProperties(props, special, lattice, n) {
+  document.getElementById('properties-panel').style.display = 'block';
+  document.getElementById('elements-panel').style.display  = 'block';
+
+  const badge  = (ok, yes, no) => `<span class="prop-badge ${ok?'badge-yes':'badge-no'}">${ok?'✓':'✗'} ${ok?yes:no}</span>`;
+  const info   = label => `<span class="prop-badge badge-info">${label}</span>`;
+  const sp     = label => `<span class="prop-badge badge-special">${label}</span>`;
+
+  document.getElementById('props-content').innerHTML = `
+    <div style="margin-bottom:8px">
+      ${badge(props.refl,  'Reflexive',       'Not reflexive')}
+      ${badge(props.anti,  'Antisymmetric',   'Not antisymmetric')}
+      ${badge(props.trans, 'Transitive',      'Not transitive')}
+    </div>
+    ${badge(props.refl && props.anti && props.trans, 'Valid Poset', 'Not a Poset')}
+    ${badge(lattice, 'Lattice', 'Not a lattice')}
+    <div style="margin-top:6px">
+      ${info('|S| = ' + n)}
+      ${info('|R| = ' + allEdges.filter(e => !e.transitive).length)}
+    </div>`;
+
+  document.getElementById('elements-content').innerHTML = `
+    ${special.greatest.length ? sp('Greatest ⊤: ' + special.greatest.join(', ')) : ''}
+    ${special.least.length    ? sp('Least ⊥: '    + special.least.join(', '))    : ''}
+    <div style="margin-top:4px">
+      ${special.maximal.map(e => `<span class="prop-badge" style="background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7">⊤ Maximal: ${e}</span>`).join('')}
+    </div>
+    <div>
+      ${special.minimal.map(e => `<span class="prop-badge" style="background:#fff8e1;color:#e65100;border:1px solid #ffe082">⊥ Minimal: ${e}</span>`).join('')}
+    </div>
+    ${special.greatest.length === 1 && special.least.length === 1
+      ? '<div class="info-box" style="margin-top:6px">Unique greatest &amp; least element → this poset is <strong>bounded</strong>.</div>' : ''}`;
+}
+
+// ============================================================
+//  DRAG & PAN
+// ============================================================
+function startDrag(e, node) {
+  e.stopPropagation();
+  dragging   = node;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  nodeStartX = node.x;   nodeStartY = node.y;
+}
+
+document.addEventListener('mousemove', e => {
+  if (dragging) {
+    const svgEl = document.getElementById('diagram-svg');
+    const vb    = svgEl.viewBox.baseVal;
+    const rect  = svgEl.getBoundingClientRect();
+    const sx = vb.width  / rect.width;
+    const sy = vb.height / rect.height;
+    dragging.x = nodeStartX + (e.clientX - dragStartX) * sx;
+    dragging.y = nodeStartY + (e.clientY - dragStartY) * sy;
+    updateNodePositions();
+  } else if (panning) {
+    offsetX += e.clientX - panStartX;
+    offsetY += e.clientY - panStartY;
+    panStartX = e.clientX; panStartY = e.clientY;
+    applyTransform();
+  }
+});
+
+document.addEventListener('mouseup', () => { dragging = null; panning = false; });
+
+const canvasWrap = document.getElementById('canvas-wrap');
+canvasWrap.addEventListener('mousedown', e => {
+  if (!dragging && (e.target === canvasWrap || e.target === document.getElementById('diagram-svg'))) {
+    panning = true; panStartX = e.clientX; panStartY = e.clientY;
+  }
+});
+canvasWrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  scale *= e.deltaY > 0 ? 0.9 : 1.1;
+  scale = Math.min(Math.max(scale, 0.2), 4);
+  applyTransform();
+}, { passive: false });
+
+function applyTransform() {
+  document.getElementById('edges-layer').setAttribute('transform', `translate(${offsetX} ${offsetY}) scale(${scale})`);
+  document.getElementById('nodes-layer').setAttribute('transform', `translate(${offsetX} ${offsetY}) scale(${scale})`);
+}
+
+function updateNodePositions() {
+  const R = 22;
+  const nodeLayer = document.getElementById('nodes-layer');
+  const edgeLayer = document.getElementById('edges-layer');
+
+  const g = nodeLayer.querySelector(`[data-id="${dragging.id}"]`);
+  if (g) {
+    g.querySelector('circle').setAttribute('cx', dragging.x);
+    g.querySelector('circle').setAttribute('cy', dragging.y);
+    const texts = g.querySelectorAll('text');
+    texts[0].setAttribute('x', dragging.x); texts[0].setAttribute('y', dragging.y);
+    if (texts[1]) { texts[1].setAttribute('x', dragging.x); texts[1].setAttribute('y', dragging.y + R + 12); }
+  }
+
+  edgeLayer.querySelectorAll('line').forEach(line => {
+    const idx  = parseInt(line.dataset.idx);
+    const edge = edges[idx];
+    if (!edge) return;
+    const src = nodes.find(n => n.id === edge.from);
+    const tgt = nodes.find(n => n.id === edge.to);
+    if (!src || !tgt) return;
+    const dx = tgt.x - src.x, dy = tgt.y - src.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return;
+    const ux = dx / len, uy = dy / len;
+    line.setAttribute('x1', src.x + ux * R);     line.setAttribute('y1', src.y + uy * R);
+    line.setAttribute('x2', tgt.x - ux * (R+6)); line.setAttribute('y2', tgt.y - uy * (R+6));
+  });
+}
+
+// ============================================================
+//  DISPLAY CONTROLS
+// ============================================================
+function toggleTransitive() {
+  showTransitive = !showTransitive;
+  if (nodes.length === 0) return;
+  const vb = document.getElementById('diagram-svg').getAttribute('viewBox').split(' ');
+  renderDiagram(parseInt(vb[2]), parseInt(vb[3]));
+  document.getElementById('leg-trans').style.display = showTransitive ? 'flex' : 'none';
+}
+
+function animateReduction() {
+  if (nodes.length === 0) return;
+  showTransitive = true;
+  const vb = document.getElementById('diagram-svg').getAttribute('viewBox').split(' ');
+  renderDiagram(parseInt(vb[2]), parseInt(vb[3]));
+  document.getElementById('leg-trans').style.display = 'flex';
+  setTimeout(() => {
+    showTransitive = false;
+    renderDiagram(parseInt(vb[2]), parseInt(vb[3]));
+    document.getElementById('leg-trans').style.display = 'none';
+  }, 2200);
+}
+
+function resetLayout() {
+  if (nodes.length === 0) return;
+  const elements = document.getElementById('elements-input').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const pairs    = document.getElementById('relations-input').value.split('\n').map(l=>{const p=l.trim().split(/\s+/);return p.length>=2?[p[0],p[1]]:null;}).filter(Boolean);
+  const rel      = buildAdjacency(elements, pairs);
+  const closed   = transitiveClose(elements, rel);
+  const edgeList = transitiveReduction(elements, closed);
+  const { positions, W, H } = computeLayout(elements, closed, edgeList);
+  nodes.forEach(n => { const p = positions[n.id]; n.x = p.x; n.y = p.y; });
+  renderDiagram(W, H); fitView();
+}
+
+function fitView()  { offsetX = 0; offsetY = 0; scale = 1; applyTransform(); }
+function zoomIn()   { scale = Math.min(scale * 1.2, 4); applyTransform(); }
+function zoomOut()  { scale = Math.max(scale / 1.2, 0.2); applyTransform(); }
+
+// ============================================================
+//  PRESETS
+// ============================================================
+const PRESETS = {
+  div12: {
+    elements:'1,2,3,4,6,12',
+    relations:'1 2\n1 3\n2 4\n2 6\n3 6\n4 12\n6 12'
+  },
+
+  power3: {
+    elements:'∅,{a},{b},{c},{a,b},{a,c},{b,c},{a,b,c}',
+    relations:'∅ {a}\n∅ {b}\n∅ {c}\n{a} {a,b}\n{a} {a,c}\n{b} {a,b}\n{b} {b,c}\n{c} {a,c}\n{c} {b,c}\n{a,b} {a,b,c}\n{a,c} {a,b,c}\n{b,c} {a,b,c}'
+  },
+
+  chain: {
+    elements:'1,2,3,4,5',
+    relations:'1 2\n2 3\n3 4\n4 5'
+  },
+
+  antichain: {
+    elements:'a,b,c,d',
+    relations:''
+  },
+
+  diamond: {
+    elements:'0,a,b,1',
+    relations:'0 a\n0 b\na 1\nb 1'
+  },
+
+  deps: {
+    elements:'A,B,C,D,E,F',
+    relations:'A B\nA C\nB D\nC D\nD E\nC F'
+  },
+
+  subset2: {
+    elements:'∅,{1},{2},{1,2}',
+    relations:'∅ {1}\n∅ {2}\n{1} {1,2}\n{2} {1,2}'
+  },
+
+  div60: {
+    elements:'1,2,3,4,5,6,10,12,15,20,30,60',
+    relations:'1 2\n1 3\n1 5\n2 4\n2 6\n2 10\n3 6\n3 15\n4 12\n4 20\n5 10\n5 15\n6 12\n6 30\n10 20\n10 30\n12 60\n15 30\n20 60\n30 60'
+  },
+
+  partition4: {
+    elements:'1234,12|34,13|24,14|23,1|234,2|134,3|124,4|123,1|2|34,1|3|24,1|4|23,12|3|4,13|2|4,14|2|3,1|2|3|4',
+    relations:'1|2|3|4 12|3|4\n1|2|3|4 13|2|4\n1|2|3|4 14|2|3\n1|2|3|4 1|3|24\n1|2|3|4 1|4|23\n1|2|3|4 1|234\n1|2|3|4 2|134\n1|2|3|4 3|124\n1|2|3|4 4|123\n12|3|4 12|34\n13|2|4 13|24\n14|2|3 14|23\n1|3|24 13|24\n1|4|23 14|23\n1|234 1234\n2|134 1234\n3|124 1234\n4|123 1234\n12|34 1234\n13|24 1234\n14|23 1234'
+  },
+
+  z2lattice: {
+    elements:'(0,0),(1,0),(0,1),(1,1),(2,0),(0,2)',
+    relations:'(0,0) (1,0)\n(0,0) (0,1)\n(1,0) (1,1)\n(0,1) (1,1)\n(1,0) (2,0)\n(0,1) (0,2)'
+  },
+
+  subset3: {
+    elements:'∅,{a},{b},{c}',
+    relations:'∅ {a}\n∅ {b}\n∅ {c}'
+  },
+
+  div100: {
+    elements:'1,2,4,5,10,20,25,50,100',
+    relations:'1 2\n1 5\n2 4\n2 10\n5 10\n5 25\n4 20\n10 20\n10 50\n25 50\n20 100\n50 100'
+  }
+};
+
+function loadPreset(name) {
+  const p = PRESETS[name];
+
+  if (!p) {
+    alert("Preset not found");
+    return;
+  }
+
+  document.getElementById('elements-input').value = p.elements;
+  document.getElementById('relations-input').value = p.relations;
+
+  buildDiagram();
+}
+
+function autoDivisibility() {
+  const elements = document.getElementById('elements-input').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const nums     = elements.map(Number).filter(n => !isNaN(n));
+  if (nums.length === 0) { alert('Please enter numeric elements for auto-divisibility.'); return; }
+  const pairs = [];
+  nums.forEach(a => nums.forEach(b => { if (a !== b && b % a === 0) pairs.push(`${a} ${b}`); }));
+  document.getElementById('relations-input').value = pairs.join('\n');
+  buildDiagram();
+}
+
+// ============================================================
+//  MATRIX INPUT
+// ============================================================
+let matrixElems = [];
+
+function buildMatrix() {
+  const elemStr = document.getElementById('matrix-elements').value;
+  matrixElems   = elemStr.split(',').map(s => s.trim()).filter(Boolean);
+  matrixValues  = {};
+  matrixElems.forEach((a, i) => matrixElems.forEach((b, j) => {
+    matrixValues[`${i},${j}`] = i === j ? 1 : 0;
+  }));
+  renderMatrix();
+}
+
+function renderMatrix() {
+  const n   = matrixElems.length;
+  const ctr = document.getElementById('matrix-container');
+  let html  = `<div style="overflow-x:auto"><table style="border-collapse:separate;border-spacing:2px">
+    <tr><td style="width:28px;height:28px"></td>`;
+  matrixElems.forEach(e => { html += `<td style="text-align:center;font-size:11px;color:var(--ink3);font-weight:700;padding:0 4px">${e}</td>`; });
+  html += '</tr>';
+  matrixElems.forEach((a, i) => {
+    html += `<tr><td style="font-size:11px;color:var(--ink3);font-weight:700;text-align:right;padding-right:6px">${a}</td>`;
+    matrixElems.forEach((b, j) => {
+      const v    = matrixValues[`${i},${j}`] || 0;
+      const diag = i === j;
+      const cls  = diag ? 'matrix-cell diag' : `matrix-cell ${v ? 'on' : 'off'}`;
+      html += `<td><div class="${cls}" onclick="toggleCell(${i},${j})">${v}</div></td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  ctr.innerHTML = html;
+}
+
+function toggleCell(i, j) {
+  if (i === j) return;
+  const key = `${i},${j}`;
+  matrixValues[key] = matrixValues[key] ? 0 : 1;
+  renderMatrix();
+}
+
+function buildFromMatrix() {
+  const elemStr = document.getElementById('matrix-elements').value;
+  const elems   = elemStr.split(',').map(s => s.trim()).filter(Boolean);
+  document.getElementById('elements-input').value = elems.join(',');
+  const pairs = [];
+  elems.forEach((a, i) => elems.forEach((b, j) => {
+    if (i !== j && matrixValues[`${i},${j}`]) pairs.push(`${a} ${b}`);
+  }));
+  document.getElementById('relations-input').value = pairs.join('\n');
+  switchTab('builder');
+  buildDiagram();
+}
+
+// ============================================================
+//  TAB SWITCHING
+// ============================================================
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sidebar').forEach(s => s.style.display = 'none');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+
+  // Activate button
+  Array.from(document.querySelectorAll('.tab'))
+       .find(t => t.getAttribute('onclick').includes(`'${tab}'`))
+       ?.classList.add('active');
+
+  // Show sidebar
+  const sb = document.getElementById(`sidebar-${tab}`);
+  if (sb) { sb.style.display = 'flex'; sb.style.flexDirection = 'column'; sb.style.gap = '16px'; sb.style.padding = '16px'; }
+
+  // Show canvas or panel
+  const canvas = document.getElementById('canvas-wrap');
+  if (tab === 'builder' || tab === 'matrix') {
+    canvas.style.display = 'block';
+  } else {
+    canvas.style.display = 'none';
+    const panel = document.getElementById(`panel-${tab}`);
+    if (panel) panel.classList.add('active');
+    if (tab === 'explain')    showConcept('poset');
+    if (tab === 'realworld')  buildRealWorld();
+    if (tab === 'quiz' && !quizStarted) showQuizDiagram();
+  }
+}
+
+// ============================================================
+//  LEARN / EXPLAIN
+// ============================================================
+const CONCEPTS = {
+  poset: {
+    title: 'Partially Ordered Set (Poset)',
+    content: `A <strong>poset</strong> is a set S with a binary relation ≤ satisfying three axioms:
+<br><br>
+<strong>1. Reflexive:</strong> a ≤ a for all a ∈ S<br>
+<strong>2. Antisymmetric:</strong> if a ≤ b and b ≤ a then a = b<br>
+<strong>3. Transitive:</strong> if a ≤ b and b ≤ c then a ≤ c
+<br><br>
+<em>Example:</em> {1,2,3,6} under divisibility (a|b) is a poset. 1|2, 1|3, 2|6, 3|6, and trivially a|a.
+<br><br>
+Unlike total orders, some elements may be <strong>incomparable</strong> — neither a ≤ b nor b ≤ a.`,
+    preset: 'div12'
+  },
+  hasse: {
+    title: 'Hasse Diagrams',
+    content: `A <strong>Hasse diagram</strong> represents a poset visually:
+<br><br>
+• Elements drawn as circles (nodes)<br>
+• Line from a up to b means a is <em>covered by</em> b (a &lt; b with no element between)<br>
+• Higher position = larger in the order<br>
+• No arrows needed — direction implied by height<br>
+• Reflexive loops omitted<br>
+• Transitive edges omitted (kept implicit)
+<br><br>
+This is the <strong>minimum</strong> set of edges that still encodes the full partial order.`,
+    preset: 'diamond'
+  },
+  transitive: {
+    title: 'Transitive Reduction',
+    content: `<strong>Transitive reduction</strong> removes redundant edges.
+<br><br>
+An edge a → c is <em>redundant</em> if a path a → b → c already exists.
+<br><br>
+<strong>Algorithm:</strong> For each edge (a,b), remove it if ∃ c ≠ a,b such that a ≤ c ≤ b.
+<br><br>
+<strong>Why it matters:</strong> Without reduction a 5-node chain would have 10 edges (all pairs). After reduction: only 4 direct edges.
+<br><br>
+Click <strong>Animate Reduction</strong> in the Builder to see transitive edges flash red before disappearing.`,
+    preset: 'chain'
+  },
+  elements: {
+    title: 'Special Elements',
+    content: `<strong>Maximal (⊤):</strong> no element strictly above it — may have incomparable peers<br>
+<strong>Minimal (⊥):</strong> no element strictly below it<br>
+<strong>Greatest:</strong> above ALL elements (unique if exists)<br>
+<strong>Least:</strong> below ALL elements (unique if exists)
+<br><br>
+<strong>Key distinction:</strong> Maximal ≠ Greatest.<br>
+A poset can have <em>multiple</em> maximal elements but at most <em>one</em> greatest.
+<br><br>
+<strong>In Hasse diagrams:</strong><br>
+Maximal elements sit at the top with no upward edges. Minimal at the bottom with no downward edges.`,
+    preset: 'diamond'
+  },
+  lattice: {
+    title: 'Lattices',
+    content: `A poset is a <strong>lattice</strong> if every pair {a,b} has:
+<br><br>
+• <strong>Join (∨):</strong> least upper bound — smallest x with a ≤ x and b ≤ x<br>
+• <strong>Meet (∧):</strong> greatest lower bound — largest x with x ≤ a and x ≤ b
+<br><br>
+<em>Example — Power set P({a,b,c}) under ⊆:</em><br>
+Join = union (∪), Meet = intersection (∩) → always a lattice.
+<br><br>
+<em>Non-example:</em> {2,3} under divisibility has no LUB (would need 6) unless 6 is in the set.
+<br><br>
+Every chain (total order) is a lattice. Not every lattice is a chain.`,
+    preset: 'power3'
+  }
+};
+
+function showConcept(key) {
+  const c = CONCEPTS[key];
+  document.getElementById('concept-content').innerHTML =
+    `<h2 style="margin-bottom:12px;font-size:15px">${c.title}</h2>${c.content}`;
+  // Load preset silently and clone SVG into explain panel
+  loadPreset(c.preset);
+  setTimeout(() => {
+    const clone = document.getElementById('diagram-svg').cloneNode(true);
+    clone.removeAttribute('id');
+    clone.style.width = '100%'; clone.style.height = '360px';
+    clone.style.background = 'var(--paper)';
+    const ed = document.getElementById('explain-diagram');
+    ed.innerHTML = ''; ed.appendChild(clone);
+  }, 150);
+}
+
+// ============================================================
+//  QUIZ
+// ============================================================
+const QUIZ_QUESTIONS = [
+  {
+    diagram: 'div12',
+    q: 'In the Hasse diagram of divisors of 12 = {1,2,3,4,6,12}, which element is the greatest?',
+    options: ['1', '12', '6', '4'],
+    answer: 1,
+    explain: '12 is the greatest element because every other element divides 12, so all are ≤ 12.'
+  },
+  {
+    diagram: 'diamond',
+    q: 'In the diamond poset {0,a,b,1}, are elements a and b comparable?',
+    options: ['Yes, a ≤ b', 'Yes, b ≤ a', 'No — a ∥ b (incomparable)', 'Only if it\'s a lattice'],
+    answer: 2,
+    explain: 'Neither a ≤ b nor b ≤ a. They are incomparable, sharing the same lower bound 0 and upper bound 1.'
+  },
+  {
+    diagram: 'antichain',
+    q: 'In an antichain {a,b,c,d} where no two elements are related, how many maximal elements exist?',
+    options: ['0', '1', '2', '4'],
+    answer: 3,
+    explain: 'In an antichain every element is both maximal and minimal — no element is above or below any other.'
+  },
+  {
+    diagram: 'chain',
+    q: 'A total order (chain) 1 < 2 < 3 < 4 < 5 — is it also a lattice?',
+    options: ['True — join=max, meet=min', 'False — chains lack joins', 'True — only if it\'s finite', 'False — not all pairs have meet'],
+    answer: 0,
+    explain: 'In any total order, max(a,b) is the join and min(a,b) is the meet. So all chains are lattices.'
+  },
+  {
+    diagram: 'power3',
+    q: 'In P({a,b,c}) under ⊆, what is {a,b} ∧ {b,c} (the meet)?',
+    options: ['{a,b,c}', '{b}', '∅', '{a,b} ∪ {b,c}'],
+    answer: 1,
+    explain: 'Meet is intersection: {a,b} ∩ {b,c} = {b}. This is the greatest lower bound of the two sets.'
+  },
+  {
+    diagram: 'div12',
+    q: 'In the divisors of 12, which elements are minimal?',
+    options: ['Only 1', '1 and 2', '1, 2, and 3', 'None'],
+    answer: 0,
+    explain: '1 divides everything, so 1 is the unique least (and minimal) element. There is no element below 1.'
+  }
+];
+
+function showQuizDiagram() {
+  loadPreset('diamond');
+  setTimeout(() => {
+    const clone = document.getElementById('diagram-svg').cloneNode(true);
+    clone.removeAttribute('id');
+    clone.style.width = '100%'; clone.style.height = '360px';
+    const qd = document.getElementById('quiz-diagram');
+    qd.innerHTML = ''; qd.appendChild(clone);
+  }, 150);
+}
+
+function startQuiz() {
+  quizIdx = 0; quizScore = 0; quizStarted = true; quizAnswered = false;
+  document.getElementById('quiz-score-card').style.display = 'block';
+  renderQuizQuestion();
+}
+
+function renderQuizQuestion() {
+  if (quizIdx >= QUIZ_QUESTIONS.length) {
+    document.getElementById('quiz-content').innerHTML = `
+      <div style="text-align:center;padding:20px 0">
+        <div class="quiz-score">${quizScore} / ${QUIZ_QUESTIONS.length}</div>
+        <p style="font-size:12px;color:var(--ink2);margin-top:8px">
+          ${quizScore === QUIZ_QUESTIONS.length ? '🎉 Perfect score! Poset master.' :
+            quizScore >= 4 ? 'Great understanding of Hasse diagrams!' : 'Keep studying — you\'ve got this!'}
+        </p>
+        <button class="btn primary" style="margin-top:12px" onclick="startQuiz()">Retry Quiz</button>
+      </div>`;
+    return;
+  }
+
+  const q = QUIZ_QUESTIONS[quizIdx];
+  loadPreset(q.diagram);
+  setTimeout(() => {
+    const clone = document.getElementById('diagram-svg').cloneNode(true);
+    clone.removeAttribute('id');
+    clone.style.width = '100%'; clone.style.height = '300px'; clone.style.background = 'var(--paper)';
+    const qd = document.getElementById('quiz-diagram');
+    qd.innerHTML = ''; qd.appendChild(clone);
+  }, 150);
+
+  // Step dots
+  document.getElementById('quiz-steps').innerHTML =
+    QUIZ_QUESTIONS.map((_, i) => `<div class="step-dot ${i === quizIdx ? 'active' : ''}"></div>`).join('');
+
+  quizAnswered = false;
+  document.getElementById('quiz-content').innerHTML = `
+    <div class="quiz-q">Q${quizIdx+1}/${QUIZ_QUESTIONS.length}: ${q.q}</div>
+    <div id="quiz-options">
+      ${q.options.map((o, i) => `<div class="quiz-option" onclick="answerQuiz(${i})">${o}</div>`).join('')}
+    </div>`;
+  document.getElementById('quiz-score-display').innerHTML =
+    `<span class="quiz-score" style="font-size:16px">${quizScore} / ${quizIdx}</span>`;
+}
+
+function answerQuiz(idx) {
+  if (quizAnswered) return;
+  quizAnswered = true;
+  const q    = QUIZ_QUESTIONS[quizIdx];
+  const opts = document.querySelectorAll('.quiz-option');
+  opts[q.answer].classList.add('correct');
+  if (idx !== q.answer) opts[idx].classList.add('wrong');
+  else quizScore++;
+
+  document.getElementById('quiz-score-display').innerHTML =
+    `<span class="quiz-score" style="font-size:16px">${quizScore} / ${quizIdx+1}</span>`;
+
+  const exp = document.createElement('div');
+  exp.className = 'info-box anim-in'; exp.style.marginTop = '10px';
+  exp.innerHTML = q.explain;
+  document.getElementById('quiz-options').after(exp);
+
+  const btn = document.createElement('button');
+  btn.className = 'btn primary anim-in'; btn.style.marginTop = '10px'; btn.style.width = '100%';
+  btn.textContent = quizIdx === QUIZ_QUESTIONS.length - 1 ? 'See Results →' : 'Next Question →';
+  btn.onclick = () => { quizIdx++; renderQuizQuestion(); };
+  exp.after(btn);
+}
+
+// ============================================================
+//  REAL-WORLD APPLICATIONS
+// ============================================================
+const REALWORLD = [
+  {
+    id: 'pkg',
+    title: 'Package Dependencies (npm / pip)',
+    desc: 'Software packages form a poset under the dependency relation. If package A depends on B, B must be installed before A. The Hasse diagram shows the minimal (direct) dependencies; the full transitive closure shows everything that must be present.',
+    elements: 'app,router,express,utils,lodash,core',
+    relations: 'core utils\nutils lodash\nutils express\nexpress router\nrouter app',
+    tag: 'Software Engineering'
+  },
+  {
+    id: 'class',
+    title: 'Class Hierarchy (OOP Inheritance)',
+    desc: 'In OOP, classes form a poset under inheritance. If B extends A, then A ≤ B. Java\'s single-inheritance hierarchy rooted at Object forms a tree — always a lattice with Object as least element.',
+    elements: 'Object,Animal,Vehicle,Dog,Car,Poodle',
+    relations: 'Object Animal\nObject Vehicle\nAnimal Dog\nVehicle Car\nDog Poodle',
+    tag: 'Programming'
+  },
+  {
+    id: 'tasks',
+    title: 'Project Task Scheduling (CPM)',
+    desc: 'Tasks in a project form a poset where a ≤ b means task a must complete before b. The Hasse diagram reveals parallelizable tasks (incomparable nodes) and the critical path (longest chain from ⊥ to ⊤).',
+    elements: 'Start,Design,DB,Backend,Frontend,Testing,Deploy',
+    relations: 'Start Design\nDesign DB\nDesign Backend\nDesign Frontend\nDB Backend\nBackend Testing\nFrontend Testing\nTesting Deploy',
+    tag: 'Project Management'
+  },
+  {
+    id: 'knowledge',
+    title: 'Course Prerequisites (Curriculum Design)',
+    desc: 'Academic subjects form a poset where a ≤ b means you must master a before studying b. Hasse diagrams help sequence curricula and expose foundational concepts that unlock many others.',
+    elements: 'Algebra,Calculus,LinAlg,Probability,Stats,ML,DL',
+    relations: 'Algebra Calculus\nAlgebra LinAlg\nCalculus Probability\nLinAlg ML\nProbability Stats\nStats ML\nML DL',
+    tag: 'Education'
+  },
+  {
+    id: 'security',
+    title: 'File Permission Levels (Access Control)',
+    desc: 'Linux file permissions form a poset: none ≤ read ≤ read+write, and execute is orthogonal. Security clearance levels form a total order (chain). Role-Based Access Control uses lattices to reason about permission inheritance.',
+    elements: 'none,read,write,execute,admin',
+    relations: 'none read\nnone write\nnone execute\nread admin\nwrite admin\nexecute admin',
+    tag: 'Cybersecurity'
+  },
+  {
+    id: 'db',
+    title: 'Database Normal Forms',
+    desc: 'Normal forms 1NF ≤ 2NF ≤ 3NF ≤ BCNF ≤ 4NF ≤ 5NF form a chain. Each higher form is a strictly stronger condition. This is a simple linear poset — a bounded chain with 1NF as ⊥ and 5NF as ⊤.',
+    elements: '1NF,2NF,3NF,BCNF,4NF,5NF',
+    relations: '1NF 2NF\n2NF 3NF\n3NF BCNF\nBCNF 4NF\n4NF 5NF',
+    tag: 'Databases'
+  }
+];
+
+function buildRealWorld() {
+  document.getElementById('realworld-list').innerHTML = REALWORLD.map(a => `
+    <div class="app-card" onclick="loadRealWorld('${a.id}')">
+      <h4>${a.title}</h4>
+      <p>${a.tag}</p>
+    </div>`).join('');
+}
+
+function loadRealWorld(id) {
+  const a = REALWORLD.find(x => x.id === id);
+  document.getElementById('elements-input').value  = a.elements;
+  document.getElementById('relations-input').value = a.relations;
+  document.getElementById('rw-detail').style.display = 'block';
+  document.getElementById('rw-title').textContent = a.title;
+  document.getElementById('rw-desc').textContent  = a.desc;
+  document.getElementById('rw-props').innerHTML   = `<span class="prop-badge badge-info">${a.tag}</span>`;
+
+  buildDiagram();
+  setTimeout(() => {
+    const clone = document.getElementById('diagram-svg').cloneNode(true);
+    clone.removeAttribute('id');
+    clone.style.width = '100%'; clone.style.height = '420px'; clone.style.background = 'var(--paper)';
+    const rd = document.getElementById('rw-diagram');
+    rd.innerHTML = ''; rd.appendChild(clone);
+  }, 200);
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+buildMatrix(); // populate matrix with default elements
+
+// Default diagram on load
+setTimeout(() => {
+  document.getElementById('relations-input').value = '1 2\n1 3\n2 6\n3 6';
+  buildDiagram();
+}, 120);
+</script>
+</body>
+</html>
